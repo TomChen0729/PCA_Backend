@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>服飾色彩萃取：四大方案對比</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
+    <style>
+        body { font-family: sans-serif; max-width: 1200px; margin: 20px auto; padding: 0 20px; background: #f4f4f9; color: #333; }
+        .upload-section { text-align: center; margin-bottom: 20px; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: white; border: 1px solid #ddd; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .card h3 { margin-top: 0; color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 10px; font-size: 1.1em;}
+        .img-preview { width: 100%; height: 250px; object-fit: contain; border-radius: 4px; border: 1px solid #ccc; background-image: linear-gradient(45deg, #ddd 25%, transparent 25%), linear-gradient(-45deg, #ddd 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ddd 75%), linear-gradient(-45deg, transparent 75%, #ddd 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0px; }
+        .palette-bar { display: flex; height: 30px; width: 100%; border-radius: 4px; overflow: hidden; margin-top: 10px; border: 1px solid #ccc; }
+        .color-block { display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); }
+        .main-color-box { width: 100%; height: 40px; border-radius: 4px; border: 1px solid #ccc; margin-top: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 4px; margin: 0 5px; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .status { font-size: 0.9em; color: #666; margin-top: 10px; min-height: 20px; }
+    </style>
+</head>
+<body>
+
+    <h2 style="text-align: center;">服飾色彩萃取：四大方案對比測試</h2>
+    
+    <div class="upload-section">
+        <input type="file" id="imageInput" accept="image/*" style="display: none;">
+        <button onclick="document.getElementById('imageInput').click()" style="background: #007bff;">選擇服飾照片</button>
+        <button id="btnProcess" disabled>執行後端運算比對</button>
+        <p>上傳圖片後，方案 1 會立即執行。點擊運算按鈕後，方案 2~4 將交由後端處理並回傳分析結果。</p>
+    </div>
+
+    <div class="grid-container">
+        <div class="card" id="card1">
+            <h3>1. 純前端方案 (Color Thief)</h3>
+            <img id="img1" class="img-preview" alt="原始圖片">
+            <div class="status" id="status1">等待圖片...</div>
+            <div id="box1" class="main-color-box"></div>
+        </div>
+
+        <div class="card" id="card4">
+            <h3>4. 純 KMeans (後端不去背)</h3>
+            <img id="img4" class="img-preview" alt="原始圖片">
+            <div class="status" id="status4">等待運算...</div>
+            <div id="palette4" class="palette-bar"></div>
+            <div id="box4" class="main-color-box"></div>
+        </div>
+
+        <div class="card" id="card2">
+            <h3>2. Hybrid：API 去背 (Remove.bg) + KMeans</h3>
+            <img id="img2" class="img-preview" alt="去背預覽">
+            <div class="status" id="status2">等待運算...</div>
+            <div id="palette2" class="palette-bar"></div>
+            <div id="box2" class="main-color-box"></div>
+        </div>
+
+        <div class="card" id="card3">
+            <h3>3. Hybrid：地端去背 (Rembg) + KMeans</h3>
+            <img id="img3" class="img-preview" alt="去背預覽">
+            <div class="status" id="status3">等待運算...</div>
+            <div id="palette3" class="palette-bar"></div>
+            <div id="box3" class="main-color-box"></div>
+        </div>
+    </div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const btnProcess = document.getElementById('btnProcess');
+        let currentFile = null;
+        let originalDataUrl = null;
+
+        // 共用渲染函式：用於將後端回傳的 JSON 繪製成調色盤與主色區塊
+        function renderResult(num, data) {
+            if(data.nobg_image_base64) {
+                document.getElementById(`img${num}`).src = data.nobg_image_base64;
+            }
+            
+            const paletteContainer = document.getElementById(`palette${num}`);
+            paletteContainer.innerHTML = '';
+            data.palette.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'color-block';
+                div.style.width = `${item.percentage}%`;
+                div.style.backgroundColor = `rgb(${item.rgb.join(',')})`;
+                // 佔比大於 10% 才顯示文字，確保版面整潔
+                if (item.percentage > 10) div.innerText = `${item.percentage}%`;
+                paletteContainer.appendChild(div);
+            });
+
+            const mainBox = document.getElementById(`box${num}`);
+            mainBox.style.backgroundColor = `rgb(${data.dominant_color.join(',')})`;
+            mainBox.innerText = `主色 RGB(${data.dominant_color.join(',')})`;
+            document.getElementById(`status${num}`).innerText = "✅ 運算完成";
+        }
+
+        // 監聽圖片上傳事件
+        imageInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            currentFile = file;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                originalDataUrl = event.target.result;
+                
+                // 重置所有圖片為剛上傳的原始圖片，並清空先前狀態
+                [1, 2, 3, 4].forEach(i => {
+                    document.getElementById(`img${i}`).src = originalDataUrl;
+                    if(i !== 1) {
+                        document.getElementById(`palette${i}`).innerHTML = '';
+                        document.getElementById(`box${i}`).style.backgroundColor = 'transparent';
+                        document.getElementById(`box${i}`).innerText = '';
+                        document.getElementById(`status${i}`).innerText = '等待運算...';
+                    }
+                });
+                
+                // 圖片載入後，立即執行方案 1 (前端 Color Thief)
+                const img1 = document.getElementById('img1');
+                img1.onload = () => {
+                    if (img1.src !== originalDataUrl) return; 
+                    const colorThief = new ColorThief();
+                    const rgb = colorThief.getColor(img1);
+                    const box1 = document.getElementById('box1');
+                    box1.style.backgroundColor = `rgb(${rgb.join(',')})`;
+                    box1.innerText = `主色 RGB(${rgb.join(',')})`;
+                    document.getElementById('status1').innerText = "✅ 前端運算完成";
+                    
+                    // 解鎖後端運算按鈕
+                    btnProcess.disabled = false;
+                };
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // 執行後端 API 請求
+        btnProcess.addEventListener('click', () => {
+            if (!currentFile) return;
+            btnProcess.disabled = true;
+
+            const formData = new FormData();
+            formData.append('image', currentFile);
+
+            // 定義三個後端端點
+            const configs = [
+                { id: 4, endpoint: 'http://127.0.0.1:5000/api/extract/pure-kmeans' },
+                { id: 2, endpoint: 'http://127.0.0.1:5000/api/extract/hybrid-api' },
+                { id: 3, endpoint: 'http://127.0.0.1:5000/api/extract/hybrid-local' }
+            ];
+
+            configs.forEach(config => {
+                document.getElementById(`status${config.id}`).innerText = "⏳ 運算中...";
+                
+                fetch(config.endpoint, { method: 'POST', body: formData })
+                    .then(res => res.json().then(data => ({ ok: res.ok, data })))
+                    .then(({ ok, data }) => {
+                        if (ok) {
+                            renderResult(config.id, data);
+                        } else {
+                            document.getElementById(`status${config.id}`).innerText = `❌ 錯誤: ${data.error}`;
+                        }
+                    })
+                    .catch(err => {
+                        document.getElementById(`status${config.id}`).innerText = "❌ 請求失敗，請檢查後端狀態";
+                    });
+            });
+            
+            // 設定防呆機制，兩秒後重新啟用按鈕
+            setTimeout(() => btnProcess.disabled = false, 2000);
+        });
+    </script>
+</body>
+</html>
