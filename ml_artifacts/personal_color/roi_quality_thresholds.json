@@ -1,0 +1,77 @@
+{
+  "roi": {
+    "skin": {
+      "min_raw_pixels": 57611.5,
+      "min_core_pixels": 19876.5,
+      "min_core_ratio": 0.3117692460079615,
+      "min_cluster_ratio": 0.3707521429001128
+    },
+    "skin_core": {
+      "min_raw_pixels": 17942.75,
+      "min_core_pixels": 5977.25,
+      "min_core_ratio": 0.30206510618709903,
+      "min_cluster_ratio": 0.36734906477934304
+    },
+    "forehead": {
+      "min_raw_pixels": 6021.75,
+      "min_core_pixels": 1982.5,
+      "min_core_ratio": 0.29644049482566026,
+      "min_cluster_ratio": 0.38130241545282123
+    },
+    "left_cheek": {
+      "min_raw_pixels": 5636.25,
+      "min_core_pixels": 1934.75,
+      "min_core_ratio": 0.2984942855909821,
+      "min_cluster_ratio": 0.3614722009053196
+    },
+    "right_cheek": {
+      "min_raw_pixels": 5753.0,
+      "min_core_pixels": 1916.0,
+      "min_core_ratio": 0.29940747750793956,
+      "min_cluster_ratio": 0.36161973009715864
+    },
+    "lip": {
+      "min_raw_pixels": 2475.75,
+      "min_core_pixels": 669.0,
+      "min_core_ratio": 0.20705354500486195,
+      "min_cluster_ratio": 0.2325890478248052
+    },
+    "left_iris": {
+      "min_raw_pixels": 273.25,
+      "min_core_pixels": 100.65,
+      "min_core_ratio": 0.3232386363636363,
+      "min_cluster_ratio": 0.35900648495288273
+    },
+    "right_iris": {
+      "min_raw_pixels": 274.0,
+      "min_core_pixels": 93.7,
+      "min_core_ratio": 0.3119064935064935,
+      "min_cluster_ratio": 0.35021423862887274
+    },
+    "iris": {
+      "min_raw_pixels": 560.0,
+      "min_core_pixels": 199.0,
+      "min_core_ratio": 0.3089368258859784,
+      "min_cluster_ratio": 0.341059344091619
+    },
+    "hair": {
+      "min_raw_pixels": 16612.8,
+      "min_core_pixels": 6715.0,
+      "min_core_ratio": 0.330420194512328,
+      "min_cluster_ratio": 0.3520876024597005
+    }
+  },
+  "pair": {
+    "max_cheek_deltaE76": 34.8067993039756,
+    "max_iris_deltaE76": 14.396792254683902
+  },
+  "fit_info": {
+    "source_csv": "D:\\Color-Analysis\\Color-Analysis\\Face-Color5\\method6_multiroi_robust_feature_vectors\\outputs\\multiroi_robust_features.csv",
+    "split_column": "split",
+    "train_value": "train",
+    "fit_rows": 576,
+    "low_quantile": 0.05,
+    "high_quantile": 0.95,
+    "quality_ok_threshold": 0.67
+  }
+}

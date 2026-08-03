@@ -1,20 +1,34 @@
 import os
 import site
-import onnxruntime
+
 from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-# ==========================================
-# 解決 cuDNN 9.x 動態載入 DLL 找不到的問題
-# ==========================================
-for site_pack in site.getsitepackages():
-    cudnn_bin = os.path.join(site_pack, 'nvidia', 'cudnn', 'bin')
-    if os.path.exists(cudnn_bin):
-        os.add_dll_directory(cudnn_bin)
-        break
-# 1. 預載 DLL 與環境變數 (必須在頂部)
-onnxruntime.preload_dlls()
+
+try:
+    import onnxruntime
+except ModuleNotFoundError:
+    onnxruntime = None
+
+
+if onnxruntime is not None:
+    for site_pack in site.getsitepackages():
+        cudnn_bin = os.path.join(
+            site_pack,
+            "nvidia",
+            "cudnn",
+            "bin",
+        )
+
+        if os.path.exists(cudnn_bin):
+            os.add_dll_directory(cudnn_bin)
+            break
+
+    if hasattr(onnxruntime, "preload_dlls"):
+        onnxruntime.preload_dlls()
+
+
 load_dotenv()
 
 # 2. 匯入核心套件 (❗ 確保這裡有把 jwt 匯入)
@@ -33,6 +47,10 @@ from controllers.wardrobe_controller import wardrobe_bp
 from controllers.pca_controller import pca_bp
 from controllers.user_controller import user_bp
 
+from controllers.personal_color_controller import (
+    personal_color_bp,
+)
+
 def create_app():
     app = Flask(__name__)
     CORS(app)
@@ -46,6 +64,7 @@ def create_app():
     
     app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config["MAX_CONTENT_LENGTH"] = (10 * 1024 * 1024)
     
     # --- 安全金鑰設定 ---
     app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "dev-secret")
@@ -61,6 +80,7 @@ def create_app():
     app.register_blueprint(wardrobe_bp)
     app.register_blueprint(pca_bp)
     app.register_blueprint(user_bp)
+    app.register_blueprint(personal_color_bp)
 
     @app.route('/')
     def index():

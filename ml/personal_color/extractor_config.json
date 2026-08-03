@@ -1,0 +1,21 @@
+{
+  "input_color_mode": "bgr",
+  "min_pixels": 60,
+  "median_ksize": 5,
+  "erode_iter": 1,
+  "k_clusters": 3,
+  "hair_k_clusters": 3,
+  "kmeans_method": "full",
+  "max_kmeans_pixels": 12000,
+  "rep_method": "legacy",
+  "mad_z": 2.5,
+  "skin_l_low_pct": 5.0,
+  "skin_l_high_pct": 95.0,
+  "hair_l_low_pct": 1.0,
+  "hair_l_high_pct": 99.0,
+  "lip_l_low_pct": 3.0,
+  "lip_l_high_pct": 97.0,
+  "iris_l_low_pct": 2.0,
+  "iris_l_high_pct": 98.0,
+  "seed": 42
+}

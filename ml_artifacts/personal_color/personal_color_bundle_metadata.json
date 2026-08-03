@@ -1,0 +1,57 @@
+{
+  "bundle_version": "1.0",
+  "stage1_feature_set": "F9_all_color",
+  "stage2_feature_set": "F2_skin_all",
+  "stage1_n_features": 835,
+  "stage2_n_features": 463,
+  "season_classes": [
+    "autunno",
+    "estate",
+    "inverno",
+    "primavera"
+  ],
+  "stage2_classes": {
+    "primavera": [
+      "bright",
+      "light",
+      "warm"
+    ],
+    "estate": [
+      "cool",
+      "light",
+      "soft"
+    ],
+    "autunno": [
+      "deep",
+      "soft",
+      "warm"
+    ],
+    "inverno": [
+      "bright",
+      "cool",
+      "deep"
+    ]
+  },
+  "extractor_config": {
+    "kmeans_method": "full",
+    "max_kmeans_pixels": 12000,
+    "median_ksize": 5,
+    "mad_z": 2.5
+  },
+  "source_files": {
+    "stage1_model": "D:\\Color-Analysis\\Color-Analysis\\Face-Color5\\method6_multiroi_robust_feature_vectors\\outputs\\experiments\\two_stage_hgb_deploy_py314\\stage1_hgb.joblib",
+    "stage2_models": {
+      "primavera": "D:\\Color-Analysis\\Color-Analysis\\Face-Color5\\method6_multiroi_robust_feature_vectors\\outputs\\experiments\\two_stage_hgb_deploy_py314\\stage2_primavera_hgb.joblib",
+      "estate": "D:\\Color-Analysis\\Color-Analysis\\Face-Color5\\method6_multiroi_robust_feature_vectors\\outputs\\experiments\\two_stage_hgb_deploy_py314\\stage2_estate_hgb.joblib",
+      "autunno": "D:\\Color-Analysis\\Color-Analysis\\Face-Color5\\method6_multiroi_robust_feature_vectors\\outputs\\experiments\\two_stage_hgb_deploy_py314\\stage2_autunno_hgb.joblib",
+      "inverno": "D:\\Color-Analysis\\Color-Analysis\\Face-Color5\\method6_multiroi_robust_feature_vectors\\outputs\\experiments\\two_stage_hgb_deploy_py314\\stage2_inverno_hgb.joblib"
+    },
+    "feature_sets_json": null
+  },
+  "environment": {
+    "python": "3.14.0",
+    "numpy": "2.5.1",
+    "scikit_learn": "1.9.0",
+    "joblib": "1.5.3"
+  }
+}
