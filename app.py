@@ -5,7 +5,6 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-
 try:
     import onnxruntime
 except ModuleNotFoundError:
@@ -46,6 +45,8 @@ from models.analysis_result import AnalysisResult
 from controllers.wardrobe_controller import wardrobe_bp
 from controllers.pca_controller import pca_bp
 from controllers.user_controller import user_bp
+from controllers.color_recommendation_controller import color_recommendation_bp
+
 
 from controllers.personal_color_controller import (
     personal_color_bp,
@@ -81,6 +82,7 @@ def create_app():
     app.register_blueprint(pca_bp)
     app.register_blueprint(user_bp)
     app.register_blueprint(personal_color_bp)
+    app.register_blueprint(color_recommendation_bp)
 
     @app.route('/')
     def index():
