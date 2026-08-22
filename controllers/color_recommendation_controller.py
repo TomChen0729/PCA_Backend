@@ -31,6 +31,7 @@ def get_color_matches():
             threshold=threshold,
         )
 
+        print(result)
         return jsonify({
             "success": True,
             **result,

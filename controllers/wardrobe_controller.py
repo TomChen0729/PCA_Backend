@@ -7,21 +7,12 @@ wardrobe_bp = Blueprint('wardrobe_controller', __name__, url_prefix='/api/wardro
 @wardrobe_bp.route('/get-items', methods=['POST'])
 @jwt_required() # 🛡️ 確保只有登入的使用者可以取得衣服資訊
 def get_wardrobe_item():
-    # 1. 取得當前使用者的 ID (從 JWT Token 解密出來)
+    # 直接從 Token 取得安全的使用者 ID
     current_user_id = get_jwt_identity()
 
-    # 2. 檢查是否有提供衣服 ID
-    data = request.get_json()
-    if not data or 'user_id' not in data:
-        return jsonify({'error': '未提供使用者 ID'}), 400
-
-    user_id = data['user_id']
-
     try:
-        # 3. 交給 Service 處理取得衣服資訊
-        result = WardrobeService.get_clothes(
-            user_id=current_user_id
-        )
+        # 交給 Service 處理取得衣服資訊
+        result = WardrobeService.get_clothes(user_id=current_user_id)
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500

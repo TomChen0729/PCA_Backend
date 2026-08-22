@@ -43,7 +43,6 @@ from models.analysis_result import AnalysisResult
 
 # 4. 匯入所有 Controllers (藍圖)
 from controllers.wardrobe_controller import wardrobe_bp
-from controllers.pca_controller import pca_bp
 from controllers.user_controller import user_bp
 from controllers.color_recommendation_controller import color_recommendation_bp
 
@@ -79,7 +78,6 @@ def create_app():
 
     # --- 註冊 API 路由 ---
     app.register_blueprint(wardrobe_bp)
-    app.register_blueprint(pca_bp)
     app.register_blueprint(user_bp)
     app.register_blueprint(personal_color_bp)
     app.register_blueprint(color_recommendation_bp)
