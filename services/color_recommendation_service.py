@@ -12,15 +12,28 @@ class ColorRecommendationService:
     DEFAULT_DELTA_E_THRESHOLD = 10.0
     MAX_LIMIT = 6
 
+    DIRECTION_MAIN_TO_SUB = "main_to_sub"
+    DIRECTION_SUB_TO_MAIN = "sub_to_main"
+    VALID_DIRECTIONS = {
+        DIRECTION_MAIN_TO_SUB,
+        DIRECTION_SUB_TO_MAIN,
+    }
+
     @staticmethod
     def find_similar_graph_colors(
         input_color: str,
         threshold: float,
+        direction: str,
     ):
         input_color = normalize_hex(input_color)
         input_lab = hex_to_lab(input_color)
 
-        graph_colors = ColorGraphRepository.get_all_main_colors()
+        # 主色 -> 配色：輸入色要跟圖譜中的主色比較
+        # 配色 -> 主色：輸入色要跟圖譜中的配色比較
+        if direction == ColorRecommendationService.DIRECTION_MAIN_TO_SUB:
+            graph_colors = ColorGraphRepository.get_all_main_colors()
+        else:
+            graph_colors = ColorGraphRepository.get_all_sub_colors()
 
         similar_colors = []
 
@@ -49,13 +62,18 @@ class ColorRecommendationService:
 
         return similar_colors
 
-
     @staticmethod
     def get_color_matches(
         input_color: str,
         limit: int | None = None,
         threshold: float | None = None,
+        direction: str = DIRECTION_MAIN_TO_SUB,
     ):
+        if direction not in ColorRecommendationService.VALID_DIRECTIONS:
+            raise ValueError(
+                "direction 必須是 main_to_sub 或 sub_to_main"
+            )
+
         # 沒有傳參數才使用 Service 預設值
         if limit is None:
             limit = ColorRecommendationService.DEFAULT_LIMIT
@@ -77,25 +95,28 @@ class ColorRecommendationService:
 
         input_color = normalize_hex(input_color)
 
-        # 1. 找所有相近 Neo4j 主色
+        # 1. 依 direction 找相近的圖譜來源色
         similar_colors = (
             ColorRecommendationService
             .find_similar_graph_colors(
                 input_color=input_color,
                 threshold=threshold,
+                direction=direction,
             )
         )
 
         if not similar_colors:
             return {
                 "input_color": input_color,
+                "direction": direction,
+                "limit": limit,
                 "threshold": threshold,
-                "similar_main_color_count": 0,
-                "similar_main_colors": [],
+                "similar_source_color_count": 0,
+                "similar_source_colors": [],
                 "recommendations": [],
             }
 
-        main_colors = [
+        source_colors = [
             item["color"]
             for item in similar_colors
         ]
@@ -105,37 +126,43 @@ class ColorRecommendationService:
             for item in similar_colors
         }
 
-        # 2. 查圖譜配色
-        graph_matches = (
-            ColorGraphRepository
-            .get_matches_by_main_colors(main_colors)
-        )
+        # 2. 依 direction 查圖譜
+        if direction == ColorRecommendationService.DIRECTION_MAIN_TO_SUB:
+            graph_matches = (
+                ColorGraphRepository
+                .get_matches_by_main_colors(source_colors)
+            )
+        else:
+            graph_matches = (
+                ColorGraphRepository
+                .get_matches_by_sub_colors(source_colors)
+            )
 
-        # 3. 合併重複配色
+        # 3. 合併重複推薦色
         merged = {}
 
         for item in graph_matches:
-            sub_color = normalize_hex(item["color"])
-            main_color = normalize_hex(item["main_color"])
+            recommended_color = normalize_hex(item["color"])
+            source_color = normalize_hex(item["source_color"])
 
-            if sub_color not in merged:
-                merged[sub_color] = {
-                    "color": sub_color,
+            if recommended_color not in merged:
+                merged[recommended_color] = {
+                    "color": recommended_color,
                     "count": 0,
                     "likes": 0,
                     "source_count": 0,
-                    "source_main_colors": [],
+                    "source_colors": [],
                     "min_delta_e": float("inf"),
                 }
 
-            target = merged[sub_color]
+            target = merged[recommended_color]
 
             target["count"] += item["count"]
             target["likes"] += item["likes"]
             target["source_count"] += 1
 
             delta_e = distance_map.get(
-                main_color.upper(),
+                source_color.upper(),
                 999,
             )
 
@@ -144,8 +171,8 @@ class ColorRecommendationService:
                 delta_e,
             )
 
-            target["source_main_colors"].append(
-                main_color
+            target["source_colors"].append(
+                source_color
             )
 
         recommendations = list(merged.values())
@@ -171,11 +198,12 @@ class ColorRecommendationService:
 
         return {
             "input_color": input_color,
+            "direction": direction,
             "limit": limit,
             "threshold": threshold,
-            "similar_main_color_count": len(
+            "similar_source_color_count": len(
                 similar_colors
             ),
-            "similar_main_colors": similar_colors,
+            "similar_source_colors": similar_colors,
             "recommendations": recommendations,
         }

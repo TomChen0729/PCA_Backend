@@ -18,6 +18,14 @@ def get_color_matches():
     limit = request.args.get("limit", type=int)
     threshold = request.args.get("threshold", type=float)
 
+    # 同一支 API 透過 direction 切換查詢方向
+    # main_to_sub：主色 -> 配色（預設）
+    # sub_to_main：配色 -> 主色
+    direction = request.args.get(
+        "direction",
+        ColorRecommendationService.DIRECTION_MAIN_TO_SUB,
+    )
+
     if not color:
         return jsonify({
             "success": False,
@@ -29,6 +37,7 @@ def get_color_matches():
             input_color=color,
             limit=limit,
             threshold=threshold,
+            direction=direction,
         )
 
         print(result)
