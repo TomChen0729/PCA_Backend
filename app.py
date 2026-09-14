@@ -87,6 +87,7 @@ from controllers.personal_color_controller import (
     personal_color_bp,
 )
 
+from controllers.vton_controller import vton_bp
 
 # ============================================================
 # Flask App Factory
@@ -161,6 +162,7 @@ def create_app():
 
     app.register_blueprint(color_recommendation_bp)
 
+    app.register_blueprint(vton_bp)
 
     # ========================================================
     # 首頁測試 API

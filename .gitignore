@@ -1,0 +1,29 @@
+# ─── Python 相關 ───
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# ─── 環境變數與機密設定 ───
+.env
+
+# ─── 使用者上傳與動態產生的圖片資料夾 ───
+# 排除 static 裡的 uploads 與暫存的 vton 圖片
+static/uploads/*
+!static/uploads/.gitkeep
+
+# 排除根目錄的 uploads 資料夾 (如果有用到)
+uploads/*
+
+# ─── Node.js / 前端相關 (如果是混合專案) ───
+node_modules/
+dist/
+build/
+
+# ─── 作業系統垃圾檔案 ───
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
