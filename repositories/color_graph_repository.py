@@ -3,127 +3,184 @@ from config.neo4j import Neo4jConnection
 
 class ColorGraphRepository:
 
-    @staticmethod
-    def get_all_main_colors():
-        """
-        取得所有具有 MAIN_TO_SUB 關係的主色。
-        """
-        driver = Neo4jConnection.get_driver()
-
-        query = """
-        MATCH (main:Color)-[:MAIN_TO_SUB]->(:Color)
-        WHERE main.hex IS NOT NULL
-        RETURN DISTINCT main.hex AS hex
-        """
-
-        with driver.session() as session:
-            result = session.run(query)
-
-            return [
-                record["hex"]
-                for record in result
-                if record["hex"]
-            ]
+    SOURCE = "IQON3000"
 
     @staticmethod
-    def get_all_sub_colors():
+    def get_all_color_families():
         """
-        取得所有具有 MAIN_TO_SUB 關係的配色。
-        用於「配色 -> 主色」的反向推薦。
+        取得 IQON3000 所有 ColorFamily。
         """
-        driver = Neo4jConnection.get_driver()
 
         query = """
-        MATCH (:Color)-[:MAIN_TO_SUB]->(sub:Color)
-        WHERE sub.hex IS NOT NULL
-        RETURN DISTINCT sub.hex AS hex
-        """
+        MATCH (c:ColorFamily)
 
-        with driver.session() as session:
-            result = session.run(query)
-
-            return [
-                record["hex"]
-                for record in result
-                if record["hex"]
-            ]
-
-    @staticmethod
-    def get_matches_by_main_colors(main_colors: list[str]):
-        """
-        主色 -> 配色。
-        根據多個相近主色，一次查詢所有搭配色。
-        """
-        driver = Neo4jConnection.get_driver()
-
-        query = """
-        MATCH (main:Color)-[r:MAIN_TO_SUB]->(sub:Color)
-        WHERE toUpper(main.hex) IN $source_colors
+        WHERE c.source = $source
 
         RETURN
-            main.hex AS source_color,
-            sub.hex AS color,
-            r.count AS count,
-            r.likes AS likes
+            c.key AS key,
+            c.name_zh AS name_zh
+
+        ORDER BY c.key
         """
 
-        normalized_colors = [
-            color.upper()
-            for color in main_colors
-        ]
+        with Neo4jConnection.get_session() as session:
 
-        with driver.session() as session:
             result = session.run(
                 query,
-                source_colors=normalized_colors,
+                source=ColorGraphRepository.SOURCE,
             )
 
             return [
                 {
-                    "source_color": record["source_color"],
-                    "color": record["color"],
-                    "count": record["count"] or 0,
-                    "likes": record["likes"] or 0,
+                    "key": record["key"],
+                    "name_zh": record["name_zh"],
                 }
                 for record in result
             ]
 
     @staticmethod
-    def get_matches_by_sub_colors(sub_colors: list[str]):
+    def get_top_to_bottom_matches(
+        color_key: str,
+        limit: int,
+        include_same_color: bool = True,
+    ):
         """
-        配色 -> 主色。
-        不需要新增 SUB_TO_MAIN 關係，直接反向查詢原本的 MAIN_TO_SUB。
+        上衣顏色 -> 推薦下著顏色
         """
-        driver = Neo4jConnection.get_driver()
 
         query = """
-        MATCH (main:Color)-[r:MAIN_TO_SUB]->(sub:Color)
-        WHERE toUpper(sub.hex) IN $source_colors
+        MATCH
+            (top:ColorFamily {key: $color_key})
+            -[r:MATCHES_WITH]->
+            (bottom:ColorFamily)
+
+        WHERE
+            r.source = $source
+
+            AND (
+                $include_same_color = true
+                OR r.same_color = false
+            )
 
         RETURN
-            sub.hex AS source_color,
-            main.hex AS color,
-            r.count AS count,
-            r.likes AS likes
+            top.key AS source_color,
+
+            bottom.key AS color,
+            bottom.name_zh AS color_name,
+
+            r.score_top_to_bottom
+                AS recommendation_score,
+
+            r.rank_top_to_bottom
+                AS rank,
+
+            r.pair_count
+                AS pair_count,
+
+            r.p_bottom_given_top
+                AS conditional_probability,
+
+            r.lift
+                AS lift,
+
+            r.same_color
+                AS same_color,
+
+            r.avg_like_count
+                AS avg_like_count
+
+        ORDER BY
+            r.rank_top_to_bottom ASC
+
+        LIMIT $limit
         """
 
-        normalized_colors = [
-            color.upper()
-            for color in sub_colors
-        ]
+        with Neo4jConnection.get_session() as session:
 
-        with driver.session() as session:
             result = session.run(
                 query,
-                source_colors=normalized_colors,
+                color_key=color_key,
+                source=ColorGraphRepository.SOURCE,
+                include_same_color=include_same_color,
+                limit=limit,
             )
 
             return [
-                {
-                    "source_color": record["source_color"],
-                    "color": record["color"],
-                    "count": record["count"] or 0,
-                    "likes": record["likes"] or 0,
-                }
+                dict(record)
+                for record in result
+            ]
+
+    @staticmethod
+    def get_bottom_to_top_matches(
+        color_key: str,
+        limit: int,
+        include_same_color: bool = True,
+    ):
+        """
+        下著顏色 -> 推薦上衣顏色。
+
+        不需要另外建立反向 relationship，
+        直接反向查詢 MATCHES_WITH。
+        """
+
+        query = """
+        MATCH
+            (top:ColorFamily)
+            -[r:MATCHES_WITH]->
+            (bottom:ColorFamily {key: $color_key})
+
+        WHERE
+            r.source = $source
+
+            AND (
+                $include_same_color = true
+                OR r.same_color = false
+            )
+
+        RETURN
+            bottom.key AS source_color,
+
+            top.key AS color,
+            top.name_zh AS color_name,
+
+            r.score_bottom_to_top
+                AS recommendation_score,
+
+            r.rank_bottom_to_top
+                AS rank,
+
+            r.pair_count
+                AS pair_count,
+
+            r.p_top_given_bottom
+                AS conditional_probability,
+
+            r.lift
+                AS lift,
+
+            r.same_color
+                AS same_color,
+
+            r.avg_like_count
+                AS avg_like_count
+
+        ORDER BY
+            r.rank_bottom_to_top ASC
+
+        LIMIT $limit
+        """
+
+        with Neo4jConnection.get_session() as session:
+
+            result = session.run(
+                query,
+                color_key=color_key,
+                source=ColorGraphRepository.SOURCE,
+                include_same_color=include_same_color,
+                limit=limit,
+            )
+
+            return [
+                dict(record)
                 for record in result
             ]
