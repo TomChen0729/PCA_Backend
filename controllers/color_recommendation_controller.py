@@ -41,7 +41,7 @@ def parse_bool(
         return False
 
     raise ValueError(
-        "include_same_color "
+        "include_same_color / include_same_shade "
         "必須是 true 或 false"
     )
 
@@ -52,6 +52,11 @@ def parse_bool(
 )
 def get_color_matches():
 
+    # 支援：
+    # color=#3A5575
+    # color=3A5575
+    # color=58,85,117
+    # color=rgb(58,85,117)
     color = request.args.get(
         "color"
     )
@@ -71,17 +76,28 @@ def get_color_matches():
 
         return jsonify({
             "success": False,
-            "message":
-                "請提供 color 參數",
+            "message": (
+                "請提供 color 參數，例如 "
+                "#3A5575 或 58,85,117"
+            ),
         }), 400
 
     try:
 
+        # 新名稱 include_same_shade 優先；
+        # 沒有時相容舊 include_same_color。
+        same_value = request.args.get(
+            "include_same_shade"
+        )
+
+        if same_value is None:
+            same_value = request.args.get(
+                "include_same_color"
+            )
+
         include_same_color = (
             parse_bool(
-                request.args.get(
-                    "include_same_color"
-                ),
+                same_value,
                 default=True,
             )
         )
@@ -119,6 +135,7 @@ def get_color_matches():
 
         return jsonify({
             "success": False,
-            "message":
-                "取得配色建議失敗",
+            "message": (
+                "取得配色建議失敗"
+            ),
         }), 500

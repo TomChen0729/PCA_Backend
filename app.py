@@ -108,7 +108,7 @@ def create_app():
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
     DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
     DB_PORT = os.getenv("DB_PORT", "3306")
-    DB_NAME = os.getenv("DB_NAME", "pca_member_db")
+    DB_NAME = os.getenv("DB_NAME", "pca")
 
     app.config["SQLALCHEMY_DATABASE_URI"] = (
         f"mysql+pymysql://"
