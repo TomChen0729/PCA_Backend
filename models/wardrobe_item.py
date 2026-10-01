@@ -13,6 +13,7 @@ class WardrobeItem(db.Model):
     tag = db.Column(ENUM('top', 'bottom', name='wardrobe_tags'), nullable=False, comment='衣服分類標籤')
     
     imgPath = db.Column(db.String(255), nullable=False, comment='圖片儲存路徑 (實體檔案路徑或雲端網址)')
+    previewPath = db.Column(db.String(255), nullable=True, comment='衣物縮圖路徑；AI 試穿仍使用原圖')
     color_1 = db.Column(db.String(30), nullable=True, comment='KMeans 抓出的主要顏色 1 (RGB)')
     color_2 = db.Column(db.String(30), nullable=True, comment='KMeans 抓出的主要顏色 2 (RGB)')
     color_3 = db.Column(db.String(30), nullable=True, comment='KMeans 抓出的主要顏色 3 (RGB)')

@@ -1,8 +1,31 @@
-from flask import Blueprint, request, jsonify
+import base64
+
+from flask import Blueprint, request, jsonify, current_app
 from services.wardrobe_service import WardrobeService
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 wardrobe_bp = Blueprint('wardrobe_controller', __name__, url_prefix='/api/wardrobe')
+
+
+@wardrobe_bp.route('/preview-item', methods=['POST'])
+@jwt_required()
+def preview_wardrobe_item():
+    file = request.files.get('image')
+    tag = request.form.get('tag')
+    if file is None:
+        return jsonify(success=False, message='請先選擇衣物照片'), 400
+    if tag not in {'top', 'bottom'}:
+        return jsonify(success=False, message='衣物分類必須是 top 或 bottom'), 400
+    try:
+        mask_bytes, coverage, size = WardrobeService.make_clothing_mask(file.read(), tag)
+        return jsonify(success=True,
+            mask_data='data:image/png;base64,' + base64.b64encode(mask_bytes).decode('ascii'),
+            coverage=coverage, width=size[0], height=size[1]), 200
+    except ValueError as exc:
+        return jsonify(success=False, message=str(exc)), 400
+    except Exception:
+        current_app.logger.exception('衣物自動分割失敗')
+        return jsonify(success=False, message='衣物辨識暫時失敗，請稍後重試或換一張衣服平放／掛拍的照片'), 503
 
 @wardrobe_bp.route('/get-items', methods=['POST'])
 @jwt_required() # 🛡️ 確保只有登入的使用者可以取得衣服資訊
@@ -15,6 +38,7 @@ def get_wardrobe_item():
         result = WardrobeService.get_clothes(user_id=current_user_id)
         return jsonify(result), 200
     except Exception as e:
+        current_app.logger.exception('讀取衣櫥資料失敗')
         return jsonify({'error': str(e)}), 500
 
 
@@ -31,6 +55,8 @@ def add_wardrobe_item():
     tag = request.form.get('tag')
     if not tag:
         return jsonify({'error': '未提供衣服分類 (tag)'}), 400
+    if tag not in {'top', 'bottom'}:
+        return jsonify({'success': False, 'message': '衣物分類必須是 top 或 bottom'}), 400
         
     file = request.files['image']
     image_bytes = file.read()
@@ -40,7 +66,8 @@ def add_wardrobe_item():
         result = WardrobeService.add_clothes(
             image_bytes=image_bytes, 
             user_id=current_user_id, 
-            tag=tag
+            tag=tag,
+            segmented=request.form.get('segmented') == 'true',
         )
         return jsonify(result), 201
     except Exception as e:

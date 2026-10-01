@@ -3,22 +3,76 @@ import cv2
 import uuid
 import numpy as np
 import base64
-from flask import current_app # 用來取得 Flask 專案的根目錄路徑
+import io
+import threading
+from flask import current_app
 from sklearn.cluster import KMeans
-from rembg import remove as rembg_remove, new_session
+from rembg import new_session
 import onnxruntime
+from PIL import Image
 from models.wardrobe_item import WardrobeItem
 from extensions import db
 
-# 啟動時建立 GPU Session，常駐記憶體
-try:
-    gpu_session = new_session("u2net", providers=['CUDAExecutionProvider'])
-    print("✅ Wardrobe Service: GPU Session 建立成功！")
-except Exception as e:
-    print(f"❌ Wardrobe Service: 無法建立 GPU Session，退回 CPU: {e}")
-    gpu_session = new_session("u2net")
+cloth_session = None
+cloth_session_lock = threading.Lock()
 
 class WardrobeService:
+    @staticmethod
+    def get_cloth_session():
+        """Load the category-aware clothing parser once, on the first wardrobe upload."""
+        global cloth_session
+        if cloth_session is None:
+            with cloth_session_lock:
+                if cloth_session is None:
+                    try:
+                        cloth_session = new_session("u2net_cloth_seg", providers=["CUDAExecutionProvider"])
+                        current_app.logger.info("衣物分割模型已載入 CUDA")
+                    except Exception as exc:
+                        current_app.logger.warning("衣物分割模型無法使用 CUDA，改用 CPU：%s", exc)
+                        cloth_session = new_session("u2net_cloth_seg", providers=["CPUExecutionProvider"])
+        return cloth_session
+
+    @staticmethod
+    def make_clothing_mask(image_bytes, tag):
+        """Return a semantic garment-only alpha mask as PNG bytes and its coverage."""
+        if tag not in {"top", "bottom"}:
+            raise ValueError("衣物分類必須是 top 或 bottom")
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as source:
+                source.load()
+                if source.width * source.height > 24_000_000:
+                    raise ValueError("圖片尺寸過大，請使用較小尺寸的圖片")
+                rgb_image = source.convert("RGB")
+        except (Image.UnidentifiedImageError, OSError) as exc:
+            raise ValueError("上傳的檔案不是有效圖片") from exc
+
+        category = "upper" if tag == "top" else "lower"
+        masks = WardrobeService.get_cloth_session().predict(rgb_image, cloth_category=category)
+        if not masks:
+            raise ValueError("無法辨識衣物，請改用衣服平放或掛拍的照片")
+        mask = masks[0].convert("L")
+        if mask.size != rgb_image.size:
+            mask = mask.resize(rgb_image.size, Image.Resampling.LANCZOS)
+        mask_buffer = io.BytesIO()
+        mask.save(mask_buffer, format="PNG", optimize=True)
+        coverage = float(np.asarray(mask, dtype=np.uint8).mean() / 255.0)
+        if coverage < 0.015:
+            raise ValueError("沒有辨識到足夠的衣物區域，請改用衣服平放或掛拍的照片")
+        return mask_buffer.getvalue(), round(coverage, 4), rgb_image.size
+
+    @staticmethod
+    def apply_clothing_mask(image_bytes, mask_bytes):
+        with Image.open(io.BytesIO(image_bytes)) as source, Image.open(io.BytesIO(mask_bytes)) as mask:
+            source = source.convert("RGBA")
+            mask = mask.convert("L").resize(source.size, Image.Resampling.LANCZOS)
+            pixels = np.asarray(source, dtype=np.uint8).copy()
+            predicted_alpha = np.asarray(mask, dtype=np.uint8)
+            pixels[:, :, 3] = ((pixels[:, :, 3].astype(np.uint16) * predicted_alpha) // 255).astype(np.uint8)
+            output = Image.fromarray(pixels, "RGBA")
+            buffer = io.BytesIO()
+            output.save(buffer, format="PNG", optimize=True)
+            return buffer.getvalue()
+
     @staticmethod
     def process_kmeans(image_bytes, has_alpha=False, k=5):
         """(維持原樣不變的 KMeans 邏輯)"""
@@ -50,9 +104,26 @@ class WardrobeService:
         return sorted(palette, key=lambda x: x['percentage'], reverse=True)
 
     @staticmethod
-    def add_clothes(image_bytes, user_id, tag):
-        # 1. 影像處理：去背與取色
-        nobg_bytes = rembg_remove(image_bytes, session=gpu_session)
+    def add_clothes(image_bytes, user_id, tag, segmented=False):
+        # 已由使用者在預覽中確認/修正的 alpha 遮罩直接沿用；舊 API 呼叫則執行衣物類別分割。
+        if segmented:
+            try:
+                with Image.open(io.BytesIO(image_bytes)) as image:
+                    image.load()
+                    if image.width * image.height > 24_000_000:
+                        raise ValueError("圖片尺寸過大，請使用較小尺寸的圖片")
+                    rgba = image.convert("RGBA")
+                    alpha = np.asarray(rgba.getchannel("A"), dtype=np.uint8)
+                    if not np.any(alpha > 10):
+                        raise ValueError("衣物遮罩沒有保留任何內容，請重新修正預覽")
+                    image_buffer = io.BytesIO()
+                    rgba.save(image_buffer, format="PNG", optimize=True)
+                    nobg_bytes = image_buffer.getvalue()
+            except (Image.UnidentifiedImageError, OSError) as exc:
+                raise ValueError("修正後的衣物圖片無效，請重新選擇") from exc
+        else:
+            mask_bytes, _, _ = WardrobeService.make_clothing_mask(image_bytes, tag)
+            nobg_bytes = WardrobeService.apply_clothing_mask(image_bytes, mask_bytes)
         palette = WardrobeService.process_kmeans(nobg_bytes, has_alpha=True, k=5)
         
         # 2. 準備實體檔案路徑： static/uploads/{uid}/{tag}/
@@ -65,13 +136,24 @@ class WardrobeService:
         # 3. 產生唯一檔名並存檔 (例如：a1b2c3d4.png)
         filename = f"{uuid.uuid4().hex}.png"
         file_path = os.path.join(upload_folder, filename)
+        preview_filename = f"{uuid.uuid4().hex}_preview.webp"
+        preview_path = os.path.join(upload_folder, preview_filename)
         
         with open(file_path, 'wb') as f:
             f.write(nobg_bytes)
+        try:
+            with Image.open(file_path) as image:
+                image.thumbnail((480, 640), Image.Resampling.LANCZOS)
+                image.save(preview_path, format='WEBP', quality=82, method=6)
+        except Exception:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            raise
             
         # 4. 準備寫入資料庫的「網頁相對路徑」
         # 讓前端可以用 http://127.0.0.1:5000/static/uploads/1/上衣/xxx.png 讀取
         db_img_path = f"static/uploads/{user_id}/{tag}/{filename}"
+        db_preview_path = f"static/uploads/{user_id}/{tag}/{preview_filename}"
         
         # 5. 萃取前三個主要顏色 (轉換成字串格式 "255,255,255")
         color_1 = ",".join(map(str, palette[0]['rgb'])) if len(palette) > 0 else None
@@ -83,12 +165,21 @@ class WardrobeService:
             uid=user_id,
             tag=tag,
             imgPath=db_img_path,
+            previewPath=db_preview_path,
             color_1=color_1,
             color_2=color_2,
             color_3=color_3
         )
-        db.session.add(new_item)
-        db.session.commit()
+        try:
+            db.session.add(new_item)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            if os.path.exists(preview_path):
+                os.remove(preview_path)
+            raise
 
         # 7. 回傳結果給前端
         return {
@@ -97,7 +188,9 @@ class WardrobeService:
             'data': {
                 'item_id': new_item.id,
                 'tag': new_item.tag,
+                'date': new_item.timestamp.strftime('%Y-%m-%d'),
                 'image_url': f"/{db_img_path}", # 前端可以直接拿這個網址去渲染 <img src="...">
+                'preview_url': f"/{db_preview_path}",
                 'colors': [color_1, color_2, color_3]
             }
         }
@@ -105,10 +198,10 @@ class WardrobeService:
     @staticmethod
     def get_clothes(user_id):
         # 1. 從資料庫查詢衣服資訊
-        items = WardrobeItem.query.filter_by(uid=user_id).all()
-        
-        if not items:
-            raise ValueError("找不到該使用者的任何衣服")
+        items = (WardrobeItem.query
+                 .filter_by(uid=user_id)
+                 .order_by(WardrobeItem.timestamp.desc(), WardrobeItem.id.desc())
+                 .all())
         
         # 2. 回傳衣服資訊給前端
         return {
@@ -117,7 +210,9 @@ class WardrobeService:
                 {
                     'item_id': item.id,
                     'tag': item.tag,
-                    'image_url': f"/{item.imgPath}",
+                    'date': item.timestamp.strftime('%Y-%m-%d'),
+                    'image_url': f"/{item.previewPath or item.imgPath}",
+                    'tryon_image_url': f"/{item.imgPath}",
                     'colors': [item.color_1, item.color_2, item.color_3]
                 }
                 for item in items
@@ -132,15 +227,26 @@ class WardrobeService:
         if not item:
             raise ValueError("找不到該衣服或無權限刪除")
         
-        # 2. 刪除實體檔案
         file_path = os.path.join(current_app.root_path, item.imgPath)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        
-        # 3. 從資料庫刪除紀錄
+        preview_path = os.path.join(current_app.root_path, item.previewPath) if item.previewPath else None
+
+        # 先提交資料庫刪除，避免 DB commit 失敗時檔案已先消失。
         db.session.delete(item)
         db.session.commit()
+
+        # 檔案清理失敗只會留下孤立檔案，不會讓衣物記錄重新出現。
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                current_app.logger.exception("衣櫥資料已刪除，但圖片檔案清理失敗：%s", file_path)
         
+        if preview_path and os.path.exists(preview_path):
+            try:
+                os.remove(preview_path)
+            except OSError:
+                current_app.logger.exception("縮圖清理失敗：%s", preview_path)
+
         return {
             'success': True,
             'message': '衣服已成功從衣櫥中刪除！'

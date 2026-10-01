@@ -71,6 +71,7 @@ from models.season import Season
 from models.type import Type
 from models.color_for_type import ColorForType
 from models.analysis_result import AnalysisResult
+from models.outfit import OutfitFavorite, WardrobeWishlist, TryOnHistory, TryOnJob
 
 
 # ============================================================
@@ -88,6 +89,7 @@ from controllers.personal_color_controller import (
 )
 
 from controllers.vton_controller import vton_bp
+from controllers.outfit_controller import outfit_bp
 
 # ============================================================
 # Flask App Factory
@@ -163,6 +165,19 @@ def create_app():
     app.register_blueprint(color_recommendation_bp)
 
     app.register_blueprint(vton_bp)
+    app.register_blueprint(outfit_bp)
+
+    @jwt.expired_token_loader
+    def expired_token_callback(_header, _payload):
+        return jsonify(success=False, code="token_expired", message="登入已逾期，請重新登入"), 401
+
+    @jwt.invalid_token_loader
+    def invalid_token_callback(_reason):
+        return jsonify(success=False, code="invalid_token", message="登入憑證無效，請重新登入"), 401
+
+    @jwt.unauthorized_loader
+    def missing_token_callback(_reason):
+        return jsonify(success=False, code="missing_token", message="請先登入"), 401
 
     # ========================================================
     # 首頁測試 API
@@ -190,5 +205,6 @@ if __name__ == "__main__":
 
     app.run(
         debug=True,
-        port=5001
+        port=5001,
+        use_reloader=True,
     )

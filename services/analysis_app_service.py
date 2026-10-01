@@ -74,6 +74,9 @@ class AnalysisAppService:
             type_record = Type.query.filter_by(name=db_target_name).first()
             if not type_record:
                 raise RuntimeError(f"資料庫中找不到對應的色彩型別名稱：{db_target_name}")
+            season_record = Season.query.filter_by(id=type_record.sid).first()
+            if not season_record:
+                raise RuntimeError(f"資料庫中找不到色彩型別所屬季節：{type_record.sid}")
 
             # 5. 寫入 AnalysisResult 資料表
             db_img_path = f"static/uploads/{user_id}/pca/{filename}"
@@ -85,9 +88,18 @@ class AnalysisAppService:
             db.session.add(new_analysis)
             db.session.commit()
 
-            # 6. 將需要給前端的額外資訊塞進 result 字典中
+            # 6. 將新增與歷史 API 共用的色票及日期一併回傳，避免新增後重載內容不同。
+            analysis_colors = (ColorForType.query
+                               .filter_by(tid=type_record.id)
+                               .order_by(ColorForType.id.asc())
+                               .all())
             result['analysis_id'] = new_analysis.id
+            result['date'] = new_analysis.timestamp.strftime("%Y-%m-%d")
+            result['colors'] = [color.color for color in analysis_colors]
             result['image_url'] = f"/{db_img_path}"
+            result['season'] = season_record.name
+            result['type'] = f"{type_record.name}型"
+            result['description'] = type_record.description or "這是一份專屬您的個人色彩分析報告。"
 
             return result
 
@@ -121,7 +133,10 @@ class AnalysisAppService:
             
             # 💡 透過 tid 去色彩表撈出所有屬於這個型別的顏色
             # 這裡的 ColorForType 請替換成你實際 SQLAlchemy 定義的 Model 名稱
-            db_colors = ColorForType.query.filter_by(tid=type_record.id).all()
+            db_colors = (ColorForType.query
+                         .filter_by(tid=type_record.id)
+                         .order_by(ColorForType.id.asc())
+                         .all())
             
             # 將撈出來的多筆紀錄，只萃取 color 欄位 (HEX碼)，組合成一個純字串陣列
             colors_array = [c.color for c in db_colors]
@@ -148,14 +163,17 @@ class AnalysisAppService:
         if not record:
             raise ValueError("找不到該分析紀錄或無權限刪除")
         
-        # 2. 刪除伺服器上的實體圖片檔案
+        # 先提交資料庫刪除，避免 DB commit 失敗時圖片已先消失。
         # 假設 record.faceImg 存的是 "static/uploads/..."
         file_path = os.path.join(current_app.root_path, record.faceImg)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            
-        # 3. 刪除資料庫紀錄
         db.session.delete(record)
         db.session.commit()
+
+        # 檔案清理失敗只會留下孤立檔案，不會讓已刪除的分析記錄復現。
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                current_app.logger.exception("分析紀錄已刪除，但圖片檔案清理失敗：%s", file_path)
         
         return {"success": True, "message": "分析紀錄已成功刪除！"}
