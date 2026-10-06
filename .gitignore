@@ -5,7 +5,6 @@ __pycache__/
 .venv/
 venv/
 ENV/
-.pycache/
 
 # ─── 環境變數與機密設定 ───
 .env
