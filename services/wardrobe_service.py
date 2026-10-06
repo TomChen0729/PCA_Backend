@@ -9,7 +9,7 @@ from flask import current_app
 from sklearn.cluster import KMeans
 from rembg import new_session
 import onnxruntime
-from PIL import Image
+from PIL import Image, ImageOps
 from models.wardrobe_item import WardrobeItem
 from extensions import db
 
@@ -33,18 +33,55 @@ class WardrobeService:
         return cloth_session
 
     @staticmethod
-    def make_clothing_mask(image_bytes, tag):
-        """Return a semantic garment-only alpha mask as PNG bytes and its coverage."""
-        if tag not in {"top", "bottom"}:
-            raise ValueError("衣物分類必須是 top 或 bottom")
+    def prepare_clothing_image(image_bytes, rotation_degrees=0):
+        """Apply EXIF orientation and an optional clockwise user rotation."""
         try:
             with Image.open(io.BytesIO(image_bytes)) as source:
                 source.load()
                 if source.width * source.height > 24_000_000:
                     raise ValueError("圖片尺寸過大，請使用較小尺寸的圖片")
-                rgb_image = source.convert("RGB")
+                exif_orientation = source.getexif().get(274)
+                rgb_image = ImageOps.exif_transpose(source).convert("RGB")
         except (Image.UnidentifiedImageError, OSError) as exc:
             raise ValueError("上傳的檔案不是有效圖片") from exc
+
+        try:
+            rotation = float(rotation_degrees)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("旋轉角度必須介於 0 到 359 度") from exc
+        if not np.isfinite(rotation) or rotation < 0 or rotation >= 360:
+            raise ValueError("旋轉角度必須介於 0 到 359 度")
+
+        if rotation:
+            # Fill the expanded corners with the median edge color so the model
+            # does not see artificial black wedges after an arbitrary rotation.
+            pixels = np.asarray(rgb_image)
+            border = np.concatenate((pixels[0], pixels[-1], pixels[:, 0], pixels[:, -1]), axis=0)
+            fill_color = tuple(int(value) for value in np.median(border, axis=0))
+            rgb_image = rgb_image.rotate(
+                -rotation,
+                resample=Image.Resampling.BICUBIC,
+                expand=True,
+                fillcolor=fill_color,
+            )
+
+        # Arbitrary-angle rotation expands the canvas. Keep the model input
+        # within the same pixel budget as the original upload.
+        pixel_count = rgb_image.width * rgb_image.height
+        if pixel_count > 24_000_000:
+            scale = (24_000_000 / pixel_count) ** 0.5
+            new_size = (max(1, int(rgb_image.width * scale)), max(1, int(rgb_image.height * scale)))
+            rgb_image = rgb_image.resize(new_size, Image.Resampling.LANCZOS)
+
+        preview_buffer = io.BytesIO()
+        rgb_image.save(preview_buffer, format="JPEG", quality=95, optimize=True)
+        return rgb_image, preview_buffer.getvalue(), exif_orientation is not None
+
+    @staticmethod
+    def segment_clothing_image(rgb_image, tag):
+        """Return a semantic garment-only alpha mask as PNG bytes and coverage."""
+        if tag not in {"top", "bottom"}:
+            raise ValueError("衣物分類必須是 top 或 bottom")
 
         category = "upper" if tag == "top" else "lower"
         masks = WardrobeService.get_cloth_session().predict(rgb_image, cloth_category=category)
@@ -59,6 +96,12 @@ class WardrobeService:
         if coverage < 0.015:
             raise ValueError("沒有辨識到足夠的衣物區域，請改用衣服平放或掛拍的照片")
         return mask_buffer.getvalue(), round(coverage, 4), rgb_image.size
+
+    @staticmethod
+    def make_clothing_mask(image_bytes, tag):
+        """Normalize orientation, then return a semantic garment mask."""
+        rgb_image, _, _ = WardrobeService.prepare_clothing_image(image_bytes)
+        return WardrobeService.segment_clothing_image(rgb_image, tag)
 
     @staticmethod
     def apply_clothing_mask(image_bytes, mask_bytes):
@@ -122,8 +165,9 @@ class WardrobeService:
             except (Image.UnidentifiedImageError, OSError) as exc:
                 raise ValueError("修正後的衣物圖片無效，請重新選擇") from exc
         else:
-            mask_bytes, _, _ = WardrobeService.make_clothing_mask(image_bytes, tag)
-            nobg_bytes = WardrobeService.apply_clothing_mask(image_bytes, mask_bytes)
+            rgb_image, normalized_bytes, _ = WardrobeService.prepare_clothing_image(image_bytes)
+            mask_bytes, _, _ = WardrobeService.segment_clothing_image(rgb_image, tag)
+            nobg_bytes = WardrobeService.apply_clothing_mask(normalized_bytes, mask_bytes)
         palette = WardrobeService.process_kmeans(nobg_bytes, has_alpha=True, k=5)
         
         # 2. 準備實體檔案路徑： static/uploads/{uid}/{tag}/
@@ -213,7 +257,8 @@ class WardrobeService:
                     'date': item.timestamp.strftime('%Y-%m-%d'),
                     'image_url': f"/{item.previewPath or item.imgPath}",
                     'tryon_image_url': f"/{item.imgPath}",
-                    'colors': [item.color_1, item.color_2, item.color_3]
+                    'colors': [item.color_1, item.color_2, item.color_3],
+                    'recycling_status': item.recycling_status or 'active'
                 }
                 for item in items
             ]
@@ -226,6 +271,8 @@ class WardrobeService:
         
         if not item:
             raise ValueError("找不到該衣服或無權限刪除")
+        if item.recycling_status != "active":
+            raise ValueError("待回收或已回收的單品不能直接刪除，請保留回收紀錄")
         
         file_path = os.path.join(current_app.root_path, item.imgPath)
         preview_path = os.path.join(current_app.root_path, item.previewPath) if item.previewPath else None

@@ -17,9 +17,23 @@ def preview_wardrobe_item():
     if tag not in {'top', 'bottom'}:
         return jsonify(success=False, message='衣物分類必須是 top 或 bottom'), 400
     try:
-        mask_bytes, coverage, size = WardrobeService.make_clothing_mask(file.read(), tag)
+        rgb_image, normalized_bytes, exif_orientation_found = WardrobeService.prepare_clothing_image(
+            file.read(), request.form.get('rotation_degrees', '0')
+        )
+        normalized_image_data = 'data:image/jpeg;base64,' + base64.b64encode(normalized_bytes).decode('ascii')
+        try:
+            mask_bytes, coverage, size = WardrobeService.segment_clothing_image(rgb_image, tag)
+        except ValueError as exc:
+            return jsonify(
+                success=False,
+                message=str(exc),
+                normalized_image_data=normalized_image_data,
+                exif_orientation_found=exif_orientation_found,
+            ), 400
         return jsonify(success=True,
             mask_data='data:image/png;base64,' + base64.b64encode(mask_bytes).decode('ascii'),
+            normalized_image_data=normalized_image_data,
+            exif_orientation_found=exif_orientation_found,
             coverage=coverage, width=size[0], height=size[1]), 200
     except ValueError as exc:
         return jsonify(success=False, message=str(exc)), 400
@@ -94,5 +108,7 @@ def drop_wardrobe_item():
             user_id=current_user_id
         )
         return jsonify(result), 200
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500

@@ -17,8 +17,8 @@ HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def _user_items(top_id, bottom_id, uid):
-    top = WardrobeItem.query.filter_by(id=top_id, uid=uid, tag="top").first()
-    bottom = WardrobeItem.query.filter_by(id=bottom_id, uid=uid, tag="bottom").first()
+    top = WardrobeItem.query.filter_by(id=top_id, uid=uid, tag="top", recycling_status="active").first()
+    bottom = WardrobeItem.query.filter_by(id=bottom_id, uid=uid, tag="bottom", recycling_status="active").first()
     return top, bottom
 
 
@@ -28,7 +28,8 @@ def _item_json(item):
     return {"id": item.id, "category": item.tag,
             "image_url": f"/{item.previewPath or item.imgPath}",
             "tryon_image_url": f"/{item.imgPath}",
-            "color": item.color_1, "colors": [item.color_1, item.color_2, item.color_3]}
+            "color": item.color_1, "colors": [item.color_1, item.color_2, item.color_3],
+            "recycling_status": item.recycling_status or "active"}
 
 
 def _wardrobe_item_by_id(item_id):

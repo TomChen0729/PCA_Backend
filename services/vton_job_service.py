@@ -22,8 +22,8 @@ def _run(app, job_id):
         job.status, job.error = "processing", None
         db.session.commit()
         try:
-            top = WardrobeItem.query.filter_by(id=job.top_item_id, uid=job.uid, tag="top").first()
-            bottom = WardrobeItem.query.filter_by(id=job.bottom_item_id, uid=job.uid, tag="bottom").first()
+            top = WardrobeItem.query.filter_by(id=job.top_item_id, uid=job.uid, tag="top", recycling_status="active").first()
+            bottom = WardrobeItem.query.filter_by(id=job.bottom_item_id, uid=job.uid, tag="bottom", recycling_status="active").first()
             if not top or not bottom:
                 raise ValueError("衣櫥單品已不存在，請重新選擇")
             top_path = os.path.join(app.root_path, top.imgPath)

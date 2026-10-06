@@ -90,6 +90,7 @@ from controllers.personal_color_controller import (
 
 from controllers.vton_controller import vton_bp
 from controllers.outfit_controller import outfit_bp
+from controllers.recycling_controller import recycling_bp
 
 # ============================================================
 # Flask App Factory
@@ -166,6 +167,7 @@ def create_app():
 
     app.register_blueprint(vton_bp)
     app.register_blueprint(outfit_bp)
+    app.register_blueprint(recycling_bp)
 
     @jwt.expired_token_loader
     def expired_token_callback(_header, _payload):

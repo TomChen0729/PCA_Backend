@@ -8,6 +8,7 @@ from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
 from services.vton_service import VtonService
+from models.wardrobe_item import WardrobeItem
 
 
 vton_bp = Blueprint("vton", __name__, url_prefix="/api/vton")
@@ -70,6 +71,13 @@ def try_on():
                 garment_path = _validate_image_file(garment_upload, temp_dir, "garment")
             else:
                 garment_path = VtonService.resolve_user_image(user_id, garment_img_path)
+                normalized_path = str(garment_img_path).lstrip("/")
+                wardrobe_item = WardrobeItem.query.filter(
+                    WardrobeItem.uid == int(user_id),
+                    (WardrobeItem.imgPath == normalized_path) | (WardrobeItem.previewPath == normalized_path),
+                ).first()
+                if wardrobe_item and wardrobe_item.recycling_status != "active":
+                    return jsonify({"success": False, "message": "待回收或已回收的衣物不能用於虛擬試穿"}), 409
 
             result_id = VtonService.generate_tryon(
                 human_img_path=human_path,

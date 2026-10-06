@@ -112,7 +112,7 @@ class VtonService:
                 garm_img=handle_file(garment_img_path),
                 category=cls.CATEGORY_LABELS[category],
                 n_samples=1,
-                n_steps=20,
+                n_steps=30,
                 image_scale=2.0,
                 seed=42,
                 api_name="/process_dc",
