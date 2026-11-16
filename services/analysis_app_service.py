@@ -88,6 +88,16 @@ class AnalysisAppService:
             db.session.add(new_analysis)
             db.session.commit()
 
+            # 5.1 儲存品質檢核結果至關聯 json 檔案，確保歷史紀錄與頁面刷新後仍可讀取
+            if "quality" in result:
+                import json
+                quality_file = file_path + ".quality.json"
+                try:
+                    with open(quality_file, "w", encoding="utf-8") as qf:
+                        json.dump(result["quality"], qf, ensure_ascii=False, indent=2)
+                except Exception as q_exc:
+                    print(f"品質資料寫入失敗: {q_exc}")
+
             # 6. 將新增與歷史 API 共用的色票及日期一併回傳，避免新增後重載內容不同。
             analysis_colors = (ColorForType.query
                                .filter_by(tid=type_record.id)
@@ -103,11 +113,17 @@ class AnalysisAppService:
 
             return result
 
-        except (FeatureExtractionError, PersonalColorConfigurationError) as exc:
-            # ML 模型分析失敗，進行檔案復原清理
+        except FeatureExtractionError as exc:
+            # 照片不符合分析條件（未偵測到臉等），屬於輸入問題，拋出 ValueError 以便 Controller 回傳 400
             if os.path.exists(file_path):
                 os.remove(file_path)
-            raise RuntimeError(f"特徵萃取或模型分析失敗: {str(exc)}")
+            raise ValueError(str(exc))
+
+        except PersonalColorConfigurationError as exc:
+            # 系統組態異常，回傳 500
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            raise RuntimeError(f"系統組態異常: {str(exc)}")
 
         except Exception as exc:
             # 任何非預期的系統異常（包含 DB 寫入錯誤），清理檔案與 Rollback
@@ -141,6 +157,17 @@ class AnalysisAppService:
             # 將撈出來的多筆紀錄，只萃取 color 欄位 (HEX碼)，組合成一個純字串陣列
             colors_array = [c.color for c in db_colors]
 
+            quality_data = None
+            img_full_path = os.path.join(current_app.root_path, analysis.faceImg)
+            quality_file = img_full_path + ".quality.json"
+            if os.path.exists(quality_file):
+                try:
+                    import json
+                    with open(quality_file, "r", encoding="utf-8") as qf:
+                        quality_data = json.load(qf)
+                except Exception:
+                    quality_data = None
+
             history.append({
                 "id": analysis.id,
                 "date": analysis.timestamp.strftime("%Y-%m-%d"),
@@ -148,7 +175,8 @@ class AnalysisAppService:
                 "season": season_record.name,       # 例如: "春(Spring)"
                 "type": f"{type_record.name}型",     # 例如: "亮春型"
                 "colors": colors_array,             # 例如: ["#FF6F61", "#FF5A36", ...]
-                "description": type_record.description or "這是一份專屬您的個人色彩分析報告。"
+                "description": type_record.description or "這是一份專屬您的個人色彩分析報告。",
+                "quality": quality_data
             })
             
         print(history)
@@ -173,6 +201,9 @@ class AnalysisAppService:
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
+                quality_file = file_path + ".quality.json"
+                if os.path.exists(quality_file):
+                    os.remove(quality_file)
             except OSError:
                 current_app.logger.exception("分析紀錄已刪除，但圖片檔案清理失敗：%s", file_path)
         

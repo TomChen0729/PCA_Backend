@@ -72,6 +72,30 @@ class PersonalColorQualityEvaluator:
             if int(values.get(f"{roi}_quality_ok") or 0) == 0
         ]
 
+        # 輔助檢核：若額頭被厚重黑髮覆蓋（與雙頰色差過大，或額頭嚴重偏暗），判定為額頭受瀏海/陰影遮擋
+        forehead_delta_e = float(row.get("forehead_cheek_deltaE_mean") or 0.0)
+        forehead_L = float(row.get("forehead_rep_L") or 0.0)
+        cheek_L = float(
+            row.get("cheek_rep_L_mean")
+            or (
+                (
+                    float(row.get("left_cheek_rep_L") or 0.0)
+                    + float(row.get("right_cheek_rep_L") or 0.0)
+                )
+                / 2.0
+            )
+            or 0.0
+        )
+        forehead_occlusion_by_color = (forehead_delta_e > 20.0) or (
+            (cheek_L - forehead_L) > 20.0 and forehead_L < 30.0
+        )
+
+        if forehead_occlusion_by_color:
+            values["forehead_possible_occlusion_flag"] = 1
+            values["forehead_quality_ok"] = 0
+            if "forehead" not in low_quality_rois:
+                low_quality_rois.append("forehead")
+
         warnings: list[str] = []
         if values.get("forehead_possible_occlusion_flag") == 1:
             warnings.append("額頭區域可信度較低，可能受瀏海、陰影或裁切影響。")
@@ -84,8 +108,12 @@ class PersonalColorQualityEvaluator:
         if values.get("iris_pair_asymmetry_flag") == 1:
             warnings.append("左右虹膜色差較大，本次虹膜特徵的可信度較低。")
 
-        overall_ok = int(values.get("overall_quality_ok") or 0) == 1
-        required_bad_count = int(values.get("required_roi_bad_count") or 0)
+        required_bad_count = len(low_quality_rois)
+        overall_ok = (
+            int(values.get("overall_quality_ok") or 0) == 1
+            and not forehead_occlusion_by_color
+            and required_bad_count <= 2
+        )
 
         return {
             "overall_quality_score": values.get("overall_quality_score"),
